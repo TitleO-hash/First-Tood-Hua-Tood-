@@ -175,7 +175,7 @@ def priority_badge(pg):
     return f'<span style="background:{bg};color:{fg};padding:2px 10px;border-radius:12px;font-size:12px;font-weight:500;white-space:nowrap">{label}</span>'
 
 
-def build_row(r):
+def build_row_waiting(r):
     sym = r.get("symbol", "")
     gen = r.get("generation", 1)
     pg = r.get("priority_group")
@@ -184,7 +184,6 @@ def build_row(r):
     hua = r.get("hua_price")
     tood2c = r.get("tood2_candidate_price")
     pct = r.get("pct_from_hua")
-    days = r.get("days_since_break")
     rdiff = r.get("pending_rsi_diff")
 
     return {
@@ -196,6 +195,26 @@ def build_row(r):
         "ว่าที่ตูด 2": f"{tood2c:.2f}" if tood2c else "-",
         "ห่างหัว %": f"{pct:.1f}%" if pct is not None else "-",
         "RSI Diff": f"{rdiff:.1f}" if rdiff is not None else "-",
+    }
+
+
+def build_row_confirmed(r):
+    sym = r.get("symbol", "")
+    gen = r.get("generation", 1)
+    pg = r.get("priority_group")
+    latest = r.get("latest_close", "-")
+    tood1 = r.get("tood1_price")
+    hua = r.get("hua_price")
+    tood2 = r.get("tood2_price")
+    days = r.get("days_since_break")
+
+    return {
+        "หุ้น": f"{sym}" + (f" <small style='color:gray'>Gen{gen}</small>" if gen > 1 else ""),
+        "ระดับความพร้อม": priority_badge(pg),
+        "ราคาล่าสุด": latest,
+        "ตูด 1": f"{tood1:.2f}" if tood1 else "-",
+        "หัว": f"{hua:.2f}" if hua else "-",
+        "ตูด 2": f"{tood2:.2f}" if tood2 else "-",
         "Break มาแล้ว": f"{days} วัน" if days is not None else "-",
     }
 
@@ -276,7 +295,7 @@ if run_btn:
 
     with tab1:
         if waiting:
-            rows = [build_row(r) for r in waiting]
+            rows = [build_row_waiting(r) for r in waiting]
             render_table(rows)
             st.caption("เรียงลำดับ: ระดับความพร้อม → Volume → % ห่างหัว")
         else:
@@ -284,7 +303,7 @@ if run_btn:
 
     with tab2:
         if confirmed:
-            rows = [build_row(r) for r in confirmed]
+            rows = [build_row_confirmed(r) for r in confirmed]
             render_table(rows)
             st.caption("เรียงลำดับ: วันที่ Break (น้อย = Priority สูง) → Volume")
         else:
