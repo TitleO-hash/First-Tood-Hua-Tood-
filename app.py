@@ -3,7 +3,7 @@ import pandas as pd
 from scanner import scan_universe
 
 st.set_page_config(
-    page_title="ตูด หัว ตูด Scanner",
+    page_title="ตูด หัว ตูด+ต้นรอบ Scanner",
     page_icon="📊",
     layout="wide",
 )
@@ -30,7 +30,7 @@ UNIVERSE_MAP = {
 
 # ── Sidebar ───────────────────────────────────────────────────────────────────
 with st.sidebar:
-    st.title("📊 ตูด หัว ตูด")
+    st.title("📊 ตูด หัว ตูด+ต้นรอบ")
     st.caption("ระบบ ViVi Investor — VITALi")
     st.divider()
 
@@ -220,7 +220,7 @@ def build_row_confirmed(r):
 
 
 # ── Main ──────────────────────────────────────────────────────────────────────
-st.title("📊 ตูด หัว ตูด Scanner")
+st.title("📊 ตูด หัว ตูด+ต้นรอบ Scanner")
 st.caption("ระบบ ViVi Investor — VITALi | สแกนหาหุ้น Beginning of Trend ตาม Dow Theory + RSI Diff 8")
 st.divider()
 
