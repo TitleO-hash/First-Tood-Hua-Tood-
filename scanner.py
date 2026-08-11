@@ -44,7 +44,7 @@ def validate_downtrend_before_tood1(
     """
     ย้อนซ้ายจาก tood1_idx ไป lookback_months เดือน
     ตรวจว่าทุกวันใน window นั้น Close <= EMA200 * (1 + max_pct_above_ema)
-    
+
     - ถ้าข้อมูลน้อยกว่า min_days → False (ตัดทิ้ง)
     - ถ้ามีวันไหน Close > EMA200 * 1.05 → False
     - ผ่านทั้งหมด → True
@@ -84,35 +84,45 @@ def detect_pattern(
     scan_days: int = 90,
     downtrend_months: int = 3,
     min_downtrend_days: int = 30,
+    skip_tood1_confirmation: bool = False,
 ) -> dict:
     """
     ไล่อ่านกราฟจากซ้ายไปขวา ทีละวัน เหมือนคนอ่านกราฟจริงๆ
 
-    State: FIND_B
+    Param `skip_tood1_confirmation`:
+      - False (ค่าเริ่มต้น, ใช้กับ Gen 1) : ตูด 1 ต้องรอ RSI Diff >= 8
+        จาก ATL ก่อนถึงจะยืนยัน แล้วเริ่มไล่ตามว่าที่หัวจากจุดนั้น
+      - True (ใช้กับ Gen 2 ขึ้นไป) : ตูด 1 ของ Gen ใหม่ = ตูด 2 ของ Gen
+        ก่อนหน้า (จุด breakout) ซึ่งรู้อยู่แล้วโดยไม่ต้องยืนยันซ้ำ
+        → เริ่มไล่ตามว่าที่หัวได้ทันทีจากจุดนั้นเลย
+
+    State: FIND_B  (เฉพาะตอน skip_tood1_confirmation=False)
     - ว่าที่ A = ATL 90 วัน
     - ตรวจขาลงก่อน ตูด 1: ย้อนซ้าย 3 เดือน Close <= EMA200 * 1.05
     - ไล่ขวา ทีละวัน
     - ถ้า RSI Diff (วันนั้น - ว่าที่ A) >= 8
-      → A ยืนยัน, ราคาวันนั้น = ว่าที่ B
+      → A ยืนยัน (ตูด 1 confirmed), ราคาวันนั้น = ว่าที่ B (เริ่มไล่ตามหัว)
       → เปลี่ยนไป State: CONFIRM_B
 
-    State: CONFIRM_B
+    State: CONFIRM_B  (ไล่ตามว่าที่หัว — "หัว" ยังไม่ confirm)
     - ไล่ขวา ทีละวัน
     - ถ้าราคาปิดสูงกว่า ว่าที่ B
-      → ยกเลิก ว่าที่ B เดิม, ว่าที่ B ใหม่ = ราคาวันนี้
+      → ยกเลิก ว่าที่ B เดิม, ว่าที่ B ใหม่ = ราคาวันนี้ (ยังไม่ confirm)
     - ถ้าราคาย่อลงจน RSI Diff (ว่าที่ B - วันนั้น) >= 8
-      → B ยืนยัน, ราคาวันนั้น = ว่าที่ C
+      → B ยืนยัน (หัว confirmed) → head_confirmed = True
+      → นี่คือจุดเดียวที่ระบบควรสลับการแสดงผลจาก Gen เดิม → Gen ใหม่
       → เปลี่ยนไป State: CONFIRM_C
 
     State: CONFIRM_C
     - ไล่ขวา ทีละวัน
     - ถ้าราคาปิดต่ำกว่า A → ล้างไพ่
-    - ถ้าราคาปิดสูงกว่า B → C ยืนยัน = Signal BUY!
+    - ถ้าราคาปิดสูงกว่า B → C ยืนยัน (ตูด 2 confirmed) + Breakout พร้อมกัน = Signal BUY!
     - ถ้ายังไม่เกิดทั้งสอง → จ่อ Break (ติดตาม Low ใหม่เป็น ว่าที่ C)
     """
 
     result = {
         "state": "no_pattern",
+        "head_confirmed": False,
         "tood1_idx": None, "tood1_price": None, "tood1_rsi": None,
         "hua_idx": None, "hua_price": None, "hua_rsi": None,
         "tood2_idx": None, "tood2_price": None,
@@ -139,23 +149,33 @@ def detect_pattern(
     if pd.isna(atl_rsi):
         return result
 
-    # ── ✨ ใหม่: ตรวจขาลงก่อน ตูด 1 ────────────────────────────────────
-    if not validate_downtrend_before_tood1(
-        df,
-        tood1_idx=atl_idx,
-        lookback_months=downtrend_months,
-        min_days=min_downtrend_days,
-    ):
-        return {**result, "state": "no_downtrend"}
+    # ── ตรวจขาลงก่อน ตูด 1 (เฉพาะ Gen 1 — downtrend_months > 0) ────────
+    if downtrend_months > 0:
+        if not validate_downtrend_before_tood1(
+            df,
+            tood1_idx=atl_idx,
+            lookback_months=downtrend_months,
+            min_days=min_downtrend_days,
+        ):
+            return {**result, "state": "no_downtrend"}
 
     # ── ไล่ขวาจาก ATL ────────────────────────────────────────────────────
     atl_pos = df.index.get_loc(atl_idx)
     scan = df.iloc[atl_pos + 1:]
 
-    current_state = "FIND_B"
-    b_price = None
-    b_rsi = None
-    b_idx = None
+    if skip_tood1_confirmation:
+        # Gen 2 ขึ้นไป: ตูด 1 คือจุด breakout เดิม รู้อยู่แล้วไม่ต้องยืนยันซ้ำ
+        # เริ่มไล่ตามว่าที่หัวได้ทันทีจากราคา ณ จุดตูด 1 นี้เลย
+        current_state = "CONFIRM_B"
+        b_price = atl_price
+        b_rsi = atl_rsi
+        b_idx = atl_idx
+    else:
+        current_state = "FIND_B"
+        b_price = None
+        b_rsi = None
+        b_idx = None
+
     c_price = None
     c_idx = None
 
@@ -167,7 +187,7 @@ def detect_pattern(
         rsi = float(rsi_val)
 
         # ══════════════════════════════════════════════════════════════════
-        # State: FIND_B
+        # State: FIND_B  (ยืนยันตูด 1 ด้วย RSI Diff 8 — เฉพาะ Gen 1)
         # ══════════════════════════════════════════════════════════════════
         if current_state == "FIND_B":
             diff = rsi - atl_rsi
@@ -178,7 +198,7 @@ def detect_pattern(
                 current_state = "CONFIRM_B"
 
         # ══════════════════════════════════════════════════════════════════
-        # State: CONFIRM_B
+        # State: CONFIRM_B  (ไล่ตามว่าที่หัว — ยังไม่ confirm)
         # ══════════════════════════════════════════════════════════════════
         elif current_state == "CONFIRM_B":
             if close > b_price:
@@ -191,13 +211,15 @@ def detect_pattern(
                     c_price = close
                     c_idx = idx
                     current_state = "CONFIRM_C"
+                    # ✨ จุดยืนยันหัวจริง — สัญญาณให้สลับแสดงผล Gen ใหม่
+                    result["head_confirmed"] = True
 
         # ══════════════════════════════════════════════════════════════════
         # State: CONFIRM_C
         # ══════════════════════════════════════════════════════════════════
         elif current_state == "CONFIRM_C":
             if close < atl_price:
-                return {**result, "state": "cancelled"}
+                return {**result, "state": "cancelled", "head_confirmed": True}
 
             if close <= c_price:
                 c_price = close
@@ -292,16 +314,21 @@ def detect_nested(
         next_df = current_df.iloc[tood2_pos:]
         if len(next_df) < 20:
             break
-        # Gen 2+ ไม่บังคับ downtrend (เพราะเป็น nested pattern แล้ว)
+        # Gen 2+ : ตูด 1 = ตูด 2 ของ Gen ก่อนหน้า (breakout point) รู้อยู่แล้ว
+        # ไม่ต้องเช็ค downtrend ซ้ำ และไม่ต้องรอ RSI Diff ยืนยันตูด 1 ซ้ำ
         next_result = detect_pattern(
             next_df, scan_days=999,
             downtrend_months=0,
             min_downtrend_days=0,
+            skip_tood1_confirmation=True,
         )
         gen += 1
         next_result["generation"] = gen
         next_result["parent"] = current_result
-        if next_result.get("state") not in ("no_pattern", "cancelled", "searching", "no_downtrend"):
+
+        # ✨ สลับการแสดงผลไป Gen ใหม่ ก็ต่อเมื่อ "หัว" ของ Gen ใหม่ confirm
+        # แล้วเท่านั้น (RSI Diff 8 ลงจากว่าที่หัว) — ไม่ใช่แค่เริ่มไล่ตามหัว
+        if next_result.get("head_confirmed"):
             current_result = next_result
             current_df = next_df
         else:
