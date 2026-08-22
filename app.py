@@ -337,12 +337,28 @@ if "scan_results" in st.session_state:
                 rows = [build_row_waiting(r) for r in waiting]
                 render_table(rows)
                 st.caption("เรียงลำดับ: ระดับความพร้อม → Volume → % ห่างหัว")
+
+                dl_groups = st.multiselect(
+                    "เลือกกลุ่มที่จะดาวน์โหลด",
+                    options=[4, 3, 2, 1],
+                    default=[4, 3, 2, 1],
+                    format_func=lambda x: {
+                        4: "4 — จวนจะระเบิด 🔥",
+                        3: "3 — สัญญาณชัด",
+                        2: "2 — เริ่มส่งสัญญาณ",
+                        1: "1 — รอสัญญาณ (ทุกตัว)",
+                    }[x],
+                    key="dl_groups_waiting",
+                )
+                waiting_for_dl = [r for r in waiting if (r.get("priority_group") or 0) in dl_groups]
+
                 st.download_button(
                     "⬇️ ดาวน์โหลด List หุ้นจ่อ Breakout (TradingView)",
-                    data=build_tradingview_list(waiting),
+                    data=build_tradingview_list(waiting_for_dl),
                     file_name="watchlist_jor_breakout.txt",
                     mime="text/plain",
                     key="dl_waiting",
+                    disabled=not waiting_for_dl,
                 )
             else:
                 st.info("ไม่มีหุ้นในกลุ่มจ่อ Breakout ที่ตรงเงื่อนไข")
