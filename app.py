@@ -28,6 +28,33 @@ UNIVERSE_MAP = {
     "US Stock": US_SYMBOLS,
 }
 
+# ── Symbol → TradingView format ───────────────────────────────────────────────
+def symbol_to_tradingview(sym: str) -> str:
+    """
+    แปลง Yahoo-style symbol เป็น TradingView watchlist format
+      .BK  -> SET:XXX      (ไทย)
+      .HK  -> HKEX:XXX      (ฮ่องกง, ตัด leading zero ออก)
+      อื่น ๆ -> คงเดิม        (US — ไม่มี suffix บอกตลาด)
+    """
+    s = sym.strip().upper()
+    if s.endswith(".BK"):
+        return f"SET:{s[:-3]}"
+    if s.endswith(".HK"):
+        code = s[:-3].lstrip("0") or "0"
+        return f"HKEX:{code}"
+    return s
+
+
+def build_tradingview_list(rows) -> str:
+    """รับ list ของ result dict คืนเป็น text หนึ่ง symbol ต่อบรรทัด (TradingView import format)"""
+    seen = []
+    for r in rows:
+        tv_sym = symbol_to_tradingview(r.get("symbol", ""))
+        if tv_sym and tv_sym not in seen:
+            seen.append(tv_sym)
+    return "\n".join(seen)
+
+
 # ── Sidebar ───────────────────────────────────────────────────────────────────
 with st.sidebar:
     st.title("📊 ตูด หัว ตูด+ต้นรอบ")
@@ -298,6 +325,13 @@ if run_btn:
             rows = [build_row_waiting(r) for r in waiting]
             render_table(rows)
             st.caption("เรียงลำดับ: ระดับความพร้อม → Volume → % ห่างหัว")
+            st.download_button(
+                "⬇️ ดาวน์โหลด List (TradingView)",
+                data=build_tradingview_list(waiting),
+                file_name="watchlist_jor_breakout.txt",
+                mime="text/plain",
+                key="dl_waiting",
+            )
         else:
             st.info("ไม่มีหุ้นในกลุ่มจ่อ Breakout ที่ตรงเงื่อนไข")
 
@@ -306,6 +340,13 @@ if run_btn:
             rows = [build_row_confirmed(r) for r in confirmed]
             render_table(rows)
             st.caption("เรียงลำดับ: วันที่ Break (น้อย = Priority สูง) → Volume")
+            st.download_button(
+                "⬇️ ดาวน์โหลด List (TradingView)",
+                data=build_tradingview_list(confirmed),
+                file_name="watchlist_breakout_laew.txt",
+                mime="text/plain",
+                key="dl_confirmed",
+            )
         else:
             st.info("ไม่มีหุ้น Breakout แล้วในเงื่อนไขที่เลือก")
 
@@ -315,6 +356,14 @@ if run_btn:
     c2.metric("ผ่านเงื่อนไข", f"{len(results)} ตัว")
     c3.metric("🟡 จ่อ Breakout", f"{len(waiting)} ตัว")
     c4.metric("🟢 Breakout แล้ว", f"{len(confirmed)} ตัว")
+
+    st.download_button(
+        "⬇️ ดาวน์โหลด List รวมทั้งหมด (TradingView)",
+        data=build_tradingview_list(waiting + confirmed),
+        file_name="watchlist_all.txt",
+        mime="text/plain",
+        key="dl_all",
+    )
 
 else:
     st.info("👈 เลือกหุ้นใน Sidebar แล้วกด สแกนเลย!")
