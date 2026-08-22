@@ -42,7 +42,8 @@ def symbol_to_tradingview(sym: str) -> str:
     if s.endswith(".HK"):
         code = s[:-3].lstrip("0") or "0"
         return f"HKEX:{code}"
-    return s
+    # US: Yahoo ใช้ "-" คั่น class ของหุ้น (เช่น BRK-B) แต่ TradingView ใช้ "."
+    return s.replace("-", ".")
 
 
 def build_tradingview_list(rows) -> str:
