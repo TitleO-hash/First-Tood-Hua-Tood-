@@ -251,6 +251,9 @@ st.title("📊 ตูด หัว ตูด+ต้นรอบ Scanner")
 st.caption("ระบบ ViVi Investor — VITALi | สแกนหาหุ้น Beginning of Trend ตาม Dow Theory + RSI Diff 8")
 st.divider()
 
+# กด "สแกนเลย!" แล้วเก็บผลไว้ใน session_state
+# (สำคัญ: ถ้าไม่เก็บไว้ พอกดปุ่มดาวน์โหลด Streamlit จะ rerun แล้ว run_btn
+#  กลับเป็น False ทันที ทำให้ผลสแกนหายและหน้าจอรีเซ็ตกลับไปหน้าเริ่มต้น)
 if run_btn:
     if not symbols:
         st.warning("กรุณาเลือกหรือใส่รายชื่อหุ้นก่อนครับ")
@@ -303,67 +306,67 @@ if run_btn:
     status_text.text(f"สแกนเสร็จแล้ว! พบ {len(results)} ตัว")
     progress_bar.progress(1.0)
 
+    st.session_state["scan_results"] = results
+    st.session_state["scan_symbols_count"] = len(symbols)
+
+# แสดงผลจาก session_state เสมอ (ยืนหน้าเดิมได้แม้กดปุ่มดาวน์โหลดแล้ว rerun)
+# หมายเหตุ: readiness_min / break_lv_show อ่านจาก sidebar สด ๆ ทุกรอบอยู่แล้ว
+# ปรับ filter หลังสแกนเสร็จได้เลยโดยไม่ต้องกดสแกนใหม่
+if "scan_results" in st.session_state:
+    results = st.session_state["scan_results"]
+
     if not results:
         st.info("ไม่พบหุ้นที่ผ่านเงื่อนไขในขณะนี้")
-        st.stop()
+    else:
+        waiting = [r for r in results
+                   if r.get("state") == "จ่อ_break"
+                   and (r.get("priority_group") or 0) >= readiness_min]
 
-    waiting = [r for r in results
-               if r.get("state") == "จ่อ_break"
-               and (r.get("priority_group") or 0) >= readiness_min]
+        confirmed = [r for r in results
+                     if r.get("state") == "confirmed"
+                     and r.get("priority_group", "").replace("break_", "").upper() in break_lv_show]
 
-    confirmed = [r for r in results
-                 if r.get("state") == "confirmed"
-                 and r.get("priority_group", "").replace("break_", "").upper() in break_lv_show]
+        tab1, tab2 = st.tabs([
+            f"🟡 จ่อ Breakout ({len(waiting)} ตัว)",
+            f"🟢 Breakout แล้ว ({len(confirmed)} ตัว)",
+        ])
 
-    tab1, tab2 = st.tabs([
-        f"🟡 จ่อ Breakout ({len(waiting)} ตัว)",
-        f"🟢 Breakout แล้ว ({len(confirmed)} ตัว)",
-    ])
+        with tab1:
+            if waiting:
+                rows = [build_row_waiting(r) for r in waiting]
+                render_table(rows)
+                st.caption("เรียงลำดับ: ระดับความพร้อม → Volume → % ห่างหัว")
+                st.download_button(
+                    "⬇️ ดาวน์โหลด List หุ้นจ่อ Breakout (TradingView)",
+                    data=build_tradingview_list(waiting),
+                    file_name="watchlist_jor_breakout.txt",
+                    mime="text/plain",
+                    key="dl_waiting",
+                )
+            else:
+                st.info("ไม่มีหุ้นในกลุ่มจ่อ Breakout ที่ตรงเงื่อนไข")
 
-    with tab1:
-        if waiting:
-            rows = [build_row_waiting(r) for r in waiting]
-            render_table(rows)
-            st.caption("เรียงลำดับ: ระดับความพร้อม → Volume → % ห่างหัว")
-            st.download_button(
-                "⬇️ ดาวน์โหลด List (TradingView)",
-                data=build_tradingview_list(waiting),
-                file_name="watchlist_jor_breakout.txt",
-                mime="text/plain",
-                key="dl_waiting",
-            )
-        else:
-            st.info("ไม่มีหุ้นในกลุ่มจ่อ Breakout ที่ตรงเงื่อนไข")
+        with tab2:
+            if confirmed:
+                rows = [build_row_confirmed(r) for r in confirmed]
+                render_table(rows)
+                st.caption("เรียงลำดับ: วันที่ Break (น้อย = Priority สูง) → Volume")
+                st.download_button(
+                    "⬇️ ดาวน์โหลด List (TradingView)",
+                    data=build_tradingview_list(confirmed),
+                    file_name="watchlist_breakout_laew.txt",
+                    mime="text/plain",
+                    key="dl_confirmed",
+                )
+            else:
+                st.info("ไม่มีหุ้น Breakout แล้วในเงื่อนไขที่เลือก")
 
-    with tab2:
-        if confirmed:
-            rows = [build_row_confirmed(r) for r in confirmed]
-            render_table(rows)
-            st.caption("เรียงลำดับ: วันที่ Break (น้อย = Priority สูง) → Volume")
-            st.download_button(
-                "⬇️ ดาวน์โหลด List (TradingView)",
-                data=build_tradingview_list(confirmed),
-                file_name="watchlist_breakout_laew.txt",
-                mime="text/plain",
-                key="dl_confirmed",
-            )
-        else:
-            st.info("ไม่มีหุ้น Breakout แล้วในเงื่อนไขที่เลือก")
-
-    st.divider()
-    c1, c2, c3, c4 = st.columns(4)
-    c1.metric("สแกนทั้งหมด", f"{len(symbols)} ตัว")
-    c2.metric("ผ่านเงื่อนไข", f"{len(results)} ตัว")
-    c3.metric("🟡 จ่อ Breakout", f"{len(waiting)} ตัว")
-    c4.metric("🟢 Breakout แล้ว", f"{len(confirmed)} ตัว")
-
-    st.download_button(
-        "⬇️ ดาวน์โหลด List รวมทั้งหมด (TradingView)",
-        data=build_tradingview_list(waiting + confirmed),
-        file_name="watchlist_all.txt",
-        mime="text/plain",
-        key="dl_all",
-    )
+        st.divider()
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("สแกนทั้งหมด", f"{st.session_state['scan_symbols_count']} ตัว")
+        c2.metric("ผ่านเงื่อนไข", f"{len(results)} ตัว")
+        c3.metric("🟡 จ่อ Breakout", f"{len(waiting)} ตัว")
+        c4.metric("🟢 Breakout แล้ว", f"{len(confirmed)} ตัว")
 
 else:
     st.info("👈 เลือกหุ้นใน Sidebar แล้วกด สแกนเลย!")
