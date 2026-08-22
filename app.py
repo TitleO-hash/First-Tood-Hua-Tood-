@@ -1,5 +1,6 @@
 import streamlit as st
 import pandas as pd
+from datetime import datetime
 from scanner import scan_universe
 
 st.set_page_config(
@@ -355,7 +356,7 @@ if "scan_results" in st.session_state:
                 st.download_button(
                     "⬇️ ดาวน์โหลด List หุ้นจ่อ Breakout (TradingView)",
                     data=build_tradingview_list(waiting_for_dl),
-                    file_name="watchlist_jor_breakout.txt",
+                    file_name=f"ตหต_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt",
                     mime="text/plain",
                     key="dl_waiting",
                     disabled=not waiting_for_dl,
@@ -371,7 +372,7 @@ if "scan_results" in st.session_state:
                 st.download_button(
                     "⬇️ ดาวน์โหลด List (TradingView)",
                     data=build_tradingview_list(confirmed),
-                    file_name="watchlist_breakout_laew.txt",
+                    file_name=f"ตหต_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt",
                     mime="text/plain",
                     key="dl_confirmed",
                 )
